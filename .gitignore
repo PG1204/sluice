@@ -2,7 +2,16 @@
 /bin/
 *.exe
 *.out
+*.test
 coverage.*
+
+# Profiling output (benchmarks, pprof)
+*.prof
+*.pprof
+
+# Logs and scratch
+*.log
+/tmp/
 
 # Go workspace / vendor
 /vendor/
@@ -11,9 +20,15 @@ go.work.sum
 
 # Editor / OS cruft
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # Dashboard (Node) build output — added in Phase 9
 /dashboard/node_modules/
