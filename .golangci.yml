@@ -1,0 +1,33 @@
+# golangci-lint v2 configuration.
+# Run `make lint` (installs the binary with `make tools` if missing).
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # Start from the default set and add a few high-signal linters. We keep the
+  # list intentionally lean for a fresh repo — noise now trains us to ignore
+  # the linter later.
+  default: standard
+  enable:
+    - errcheck      # unchecked errors
+    - govet         # suspicious constructs
+    - ineffassign   # unused assignments
+    - staticcheck   # broad correctness/style checks
+    - unused        # unused code
+    - revive        # golint-style style checks
+    - misspell      # common English misspellings in comments
+  settings:
+    revive:
+      rules:
+        - name: exported   # exported symbols need doc comments (CLAUDE.md rule)
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/PG1204/sluice

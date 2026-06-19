@@ -1,0 +1,33 @@
+# Build artifacts
+/bin/
+*.exe
+*.out
+coverage.*
+
+# Go workspace / vendor
+/vendor/
+go.work
+go.work.sum
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Dashboard (Node) build output — added in Phase 9
+/dashboard/node_modules/
+/dashboard/dist/
+/dashboard/build/
+
+# Local env overrides
+.env
+.env.local
+
+# Local-only planning docs (kept out of the public repo)
+CLAUDE.md
+sluice-build-plan.md
+docs/decisions/0001-language-choice.md
+
+# Local Claude Code / editor settings
+.claude/

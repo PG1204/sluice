@@ -1,0 +1,40 @@
+# Local dev stack for Sluice.
+#
+# STUB: api and dashboard services are commented out until their images exist
+# (Phases 7 and 9). Redis is real and usable now — `docker compose up redis`
+# gives the limiter something to talk to during Phase 6 development.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - SLUICE_REDIS_ADDR=redis:6379
+  #     - SLUICE_DATA_DIR=/data
+  #   volumes:
+  #     - ./testdata:/data:ro
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+
+  # dashboard:
+  #   build:
+  #     context: ./dashboard
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - api

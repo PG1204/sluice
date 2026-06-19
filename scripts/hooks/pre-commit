@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Sluice pre-commit hook: keep commits gofmt-clean and vet-clean.
+#
+# Install with `make hooks` (copies this into .git/hooks/pre-commit) once the
+# git repository exists. It checks only staged Go files so it stays fast.
+set -euo pipefail
+
+# Collect staged *.go files (added/copied/modified). Kept newline-split with
+# word-splitting rather than mapfile/readarray so the hook runs under the old
+# bash 3.2 that ships with macOS as well as modern bash.
+staged="$(git diff --cached --name-only --diff-filter=ACM -- '*.go')"
+
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+# 1. Formatting must be clean.
+# shellcheck disable=SC2086  # intentional word-split: one path per line
+unformatted="$(gofmt -l $staged)"
+if [ -n "$unformatted" ]; then
+  echo "✗ gofmt: the following staged files need formatting (run: make fmt):"
+  echo "$unformatted"
+  exit 1
+fi
+
+# 2. go vet on the whole module — cheap enough and catches cross-file issues.
+if ! go vet ./... ; then
+  echo "✗ go vet failed; fix the issues above before committing."
+  exit 1
+fi
+
+echo "✓ pre-commit checks passed"
