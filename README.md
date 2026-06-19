@@ -8,7 +8,7 @@ rate limiter charges against a tenant's quota. Cheap queries barely touch the
 quota; expensive queries drain it fast.
 
 This feedback loop between the query planner and the rate limiter mirrors how
-production cloud warehouses (BigQuery, Snowflake, Redshift) meter usage — and
+production cloud warehouses (BigQuery, Snowflake, Redshift) meter usage - and
 is almost never built from scratch.
 
 > Status: **early development**, built in phases.
