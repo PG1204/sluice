@@ -10,9 +10,9 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/PG1204/sluice/common"
 	"github.com/PG1204/sluice/engine"
@@ -52,26 +52,44 @@ func run(args []string) error {
 	}
 }
 
-// queryCommand parses the shared flags for the SQL-taking subcommands and
-// returns the engine and the SQL text.
-func queryCommand(name string, args []string) (*engine.Engine, string, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	dataDir := fs.String("data", "./testdata", "directory of CSV/Parquet table files")
-	if err := fs.Parse(args); err != nil {
-		return nil, "", err
+// parseArgs pulls the --data flag out of args, wherever it appears, and returns
+// the data directory plus the remaining positional arguments. We hand-roll this
+// (rather than use the flag package) so flags can follow the SQL string —
+// flag.Parse stops at the first positional, which silently drops a trailing
+// --data.
+func parseArgs(args []string) (dataDir string, positionals []string, err error) {
+	dataDir = "./testdata"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--data" || a == "-data":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("--data requires a directory")
+			}
+			dataDir = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--data="):
+			dataDir = strings.TrimPrefix(a, "--data=")
+		case strings.HasPrefix(a, "-data="):
+			dataDir = strings.TrimPrefix(a, "-data=")
+		case strings.HasPrefix(a, "-"):
+			return "", nil, fmt.Errorf("unknown flag %q", a)
+		default:
+			positionals = append(positionals, a)
+		}
 	}
-	if fs.NArg() == 0 {
-		return nil, "", fmt.Errorf("usage: sluice %s [--data DIR] \"<SQL>\"", name)
-	}
-	return engine.New(*dataDir), fs.Arg(0), nil
+	return dataDir, positionals, nil
 }
 
 func runQuery(args []string) error {
-	eng, sql, err := queryCommand("query", args)
+	dataDir, rest, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
-	result, err := eng.Query(context.Background(), sql)
+	if len(rest) == 0 {
+		return fmt.Errorf(`usage: sluice query [--data DIR] "<SQL>"`)
+	}
+	result, err := engine.New(dataDir).Query(context.Background(), rest[0])
 	if err != nil {
 		return err
 	}
@@ -80,11 +98,14 @@ func runQuery(args []string) error {
 }
 
 func runExplain(args []string) error {
-	eng, sql, err := queryCommand("explain", args)
+	dataDir, rest, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
-	plan, err := eng.Explain(sql)
+	if len(rest) == 0 {
+		return fmt.Errorf(`usage: sluice explain [--data DIR] "<SQL>"`)
+	}
+	plan, err := engine.New(dataDir).Explain(rest[0])
 	if err != nil {
 		return err
 	}
@@ -93,12 +114,11 @@ func runExplain(args []string) error {
 }
 
 func runTables(args []string) error {
-	fs := flag.NewFlagSet("tables", flag.ContinueOnError)
-	dataDir := fs.String("data", "./testdata", "directory of CSV/Parquet table files")
-	if err := fs.Parse(args); err != nil {
+	dataDir, _, err := parseArgs(args)
+	if err != nil {
 		return err
 	}
-	tables, err := engine.New(*dataDir).Tables()
+	tables, err := engine.New(dataDir).Tables()
 	if err != nil {
 		return err
 	}
