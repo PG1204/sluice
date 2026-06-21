@@ -1,0 +1,6 @@
+id,name,salary,active,manager
+1,Alice,95000.50,true,
+2,Bob,72000,false,Alice
+3,Carol,88000.25,true,Alice
+4,Dave,,false,Bob
+5,Eve,103000.00,true,Carol
