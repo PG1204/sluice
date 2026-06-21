@@ -45,6 +45,7 @@ sluice-build-plan.md
 docs/decisions/0001-language-choice.md
 docs/decisions/0002-parser-design.md
 docs/decisions/0003-storage-columnar.md
+docs/decisions/0004-logical-plan.md
 
 # Local Claude Code / editor settings
 .claude/
