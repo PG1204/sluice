@@ -48,10 +48,17 @@ Requires Go 1.26+.
 
 ```bash
 make build      # build the CLI into bin/sluice
-./bin/sluice --version
 make test       # run unit tests (race detector on)
 make ci         # vet + lint + test, as CI runs it
 make help       # list all targets
+```
+
+Run a query against the bundled sample tables in `testdata/`:
+
+```bash
+./bin/sluice tables --data ./testdata
+./bin/sluice query "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name" --data ./testdata
+./bin/sluice explain "SELECT name, SUM(amount) AS total FROM orders GROUP BY name ORDER BY total DESC"
 ```
 
 `docker-compose up` will bring up the full stack (api + redis + dashboard) once

@@ -1,0 +1,9 @@
+id,name,amount,status
+1,Alice,150.00,paid
+2,Bob,75.50,paid
+3,Alice,220.00,paid
+4,Carol,40.00,pending
+5,Bob,310.25,paid
+6,Alice,95.00,pending
+7,Carol,500.00,paid
+8,Bob,120.00,paid

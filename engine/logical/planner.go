@@ -228,13 +228,21 @@ func buildSort(stmt *ast.SelectStatement, input Plan, sc *scope, proj *Project, 
 	c := &checker{scope: sc, allowAgg: aggregating, aggregating: aggregating, groupKeys: stmt.GroupBy}
 
 	for _, o := range stmt.OrderBy {
-		// An unqualified name matching a SELECT output (e.g. an alias) resolves
-		// against the projection; otherwise type-check against the scope.
+		// Sort runs above Project, so a key must refer to a projected output
+		// column. Three ways it can: (1) a bare name that is already an output
+		// column or alias; (2) an expression identical to a SELECT item, which
+		// we rewrite to that item's output column; (3) otherwise it references
+		// a non-projected column — we validate it against the input scope and
+		// keep it, though execution can only order by projected columns.
 		if id, ok := o.Expr.(*ast.Identifier); ok && id.Table == "" {
 			if _, found := proj.OutSchema.ColumnIndex(id.Name); found {
 				keys = append(keys, SortKey{Expr: o.Expr, Desc: o.Desc})
 				continue
 			}
+		}
+		if name, ok := matchSelectItem(o.Expr, proj.Items); ok {
+			keys = append(keys, SortKey{Expr: &ast.Identifier{Name: name}, Desc: o.Desc})
+			continue
 		}
 		if _, err := c.resolve(o.Expr); err != nil {
 			return nil, fmt.Errorf("ORDER BY: %w", err)
@@ -242,6 +250,17 @@ func buildSort(stmt *ast.SelectStatement, input Plan, sc *scope, proj *Project, 
 		keys = append(keys, SortKey{Expr: o.Expr, Desc: o.Desc})
 	}
 	return &Sort{Input: input, Keys: keys}, nil
+}
+
+// matchSelectItem reports the output name of the SELECT item whose expression
+// is identical to expr, so ORDER BY can target the projected column.
+func matchSelectItem(expr ast.Expression, items []ProjectItem) (string, bool) {
+	for _, it := range items {
+		if it.Expr.String() == expr.String() {
+			return it.Name, true
+		}
+	}
+	return "", false
 }
 
 // expandStar turns "*" or "t.*" into one ProjectItem per matching column.
