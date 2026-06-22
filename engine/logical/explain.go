@@ -29,27 +29,31 @@ func Explain(p Plan) string {
 
 func explainInto(b *strings.Builder, p Plan, depth int) {
 	b.WriteString(strings.Repeat("  ", depth))
-	b.WriteString(p.describe())
+	b.WriteString(p.Describe())
 	b.WriteByte('\n')
 	for _, child := range p.Children() {
 		explainInto(b, child, depth+1)
 	}
 }
 
-// --- describe() per node ---
+// --- Describe() per node ---
 
-func (s *Scan) describe() string {
+func (s *Scan) Describe() string {
+	out := "Scan: " + s.Table
 	if s.Alias != "" {
-		return "Scan: " + s.Table + " AS " + s.Alias
+		out += " AS " + s.Alias
 	}
-	return "Scan: " + s.Table
+	if s.Projection != nil {
+		out += " [" + strings.Join(s.Projection, ", ") + "]"
+	}
+	return out
 }
 
-func (f *Filter) describe() string {
+func (f *Filter) Describe() string {
 	return "Filter: " + f.Predicate.String()
 }
 
-func (p *Project) describe() string {
+func (p *Project) Describe() string {
 	parts := make([]string, len(p.Items))
 	for i, it := range p.Items {
 		if it.Alias != "" {
@@ -65,11 +69,11 @@ func (p *Project) describe() string {
 	return prefix + strings.Join(parts, ", ")
 }
 
-func (j *Join) describe() string {
+func (j *Join) Describe() string {
 	return "Join " + joinTypeWord(j.JoinType) + " on " + j.On.String()
 }
 
-func (a *Aggregate) describe() string {
+func (a *Aggregate) Describe() string {
 	aggs := make([]string, len(a.Aggregates))
 	for i, ag := range a.Aggregates {
 		aggs[i] = ag.Call.String()
@@ -84,7 +88,7 @@ func (a *Aggregate) describe() string {
 	return "Aggregate: group by " + strings.Join(groups, ", ") + "; aggs " + strings.Join(aggs, ", ")
 }
 
-func (s *Sort) describe() string {
+func (s *Sort) Describe() string {
 	parts := make([]string, len(s.Keys))
 	for i, k := range s.Keys {
 		if k.Desc {
@@ -96,7 +100,7 @@ func (s *Sort) describe() string {
 	return "Sort: " + strings.Join(parts, ", ")
 }
 
-func (l *Limit) describe() string {
+func (l *Limit) Describe() string {
 	return "Limit: " + strconv.FormatInt(l.Count, 10)
 }
 

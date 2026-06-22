@@ -16,18 +16,24 @@ type TableOpener interface {
 // SeqScan reads every row of a base table, one batch at a time. It is the leaf
 // of the operator tree. The underlying DataSource is opened lazily in Open so a
 // plan can be built without touching the filesystem.
+//
+// When projection pushdown has narrowed the scan, indices holds the positions
+// of the wanted columns within each source batch and schema is the narrowed
+// output; nil indices means "pass the full batch through".
 type SeqScan struct {
-	opener TableOpener
-	table  string
-	schema storage.Schema
+	opener  TableOpener
+	table   string
+	schema  storage.Schema
+	indices []int
 
 	source storage.DataSource
 }
 
-// NewSeqScan creates a scan of the named table. schema is the table's schema
-// (already known from the catalog), used so Schema works before Open.
-func NewSeqScan(opener TableOpener, table string, schema storage.Schema) *SeqScan {
-	return &SeqScan{opener: opener, table: table, schema: schema}
+// NewSeqScan creates a scan of the named table. schema is the scan's output
+// schema and indices selects the output columns from each source batch (nil =
+// all columns, in source order).
+func NewSeqScan(opener TableOpener, table string, schema storage.Schema, indices []int) *SeqScan {
+	return &SeqScan{opener: opener, table: table, schema: schema, indices: indices}
 }
 
 // Schema implements Operator.
@@ -43,9 +49,21 @@ func (s *SeqScan) Open(ctx context.Context) error {
 	return nil
 }
 
-// Next returns the next batch from the source.
+// Next returns the next batch from the source, narrowed to the projected
+// columns when a projection was pushed down.
 func (s *SeqScan) Next(ctx context.Context) (*storage.Batch, error) {
-	return s.source.Next(ctx)
+	batch, err := s.source.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.indices == nil {
+		return batch, nil
+	}
+	cols := make([]storage.Column, len(s.indices))
+	for i, idx := range s.indices {
+		cols[i] = batch.Columns[idx]
+	}
+	return &storage.Batch{Schema: s.schema, Columns: cols}, nil
 }
 
 // Close closes the underlying source.

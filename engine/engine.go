@@ -9,21 +9,24 @@ import (
 
 	"github.com/PG1204/sluice/engine/ast"
 	"github.com/PG1204/sluice/engine/logical"
+	"github.com/PG1204/sluice/engine/optimizer"
 	"github.com/PG1204/sluice/engine/parser"
 	"github.com/PG1204/sluice/engine/physical"
 	"github.com/PG1204/sluice/engine/storage"
 )
 
-// Engine ties the pipeline together — parser, logical planner, physical
-// executor, and storage registry — behind a small API. It is the single entry
-// point the CLI and (later) the HTTP service use to run queries.
+// Engine ties the pipeline together — parser, logical planner, optimizer,
+// physical executor, and storage registry — behind a small API. It is the
+// single entry point the CLI and (later) the HTTP service use to run queries.
 type Engine struct {
 	registry *storage.Registry
+	stats    *optimizer.Provider
 }
 
 // New creates an Engine that reads tables from dataDir.
 func New(dataDir string) *Engine {
-	return &Engine{registry: storage.NewRegistry(dataDir)}
+	registry := storage.NewRegistry(dataDir)
+	return &Engine{registry: registry, stats: optimizer.NewProvider(registry)}
 }
 
 // Tables lists the available table names.
@@ -31,7 +34,7 @@ func (e *Engine) Tables() ([]string, error) {
 	return e.registry.Tables()
 }
 
-// Plan parses the SQL and builds a validated logical plan.
+// Plan parses the SQL and builds a validated (unoptimized) logical plan.
 func (e *Engine) Plan(sql string) (logical.Plan, error) {
 	stmt, err := parser.Parse(sql)
 	if err != nil {
@@ -44,13 +47,46 @@ func (e *Engine) Plan(sql string) (logical.Plan, error) {
 	return logical.Build(sel, logical.NewRegistryCatalog(e.registry))
 }
 
-// Explain returns the EXPLAIN tree for a query.
+// OptimizedPlan builds the logical plan and applies the optimizer rules.
+func (e *Engine) OptimizedPlan(ctx context.Context, sql string) (logical.Plan, error) {
+	plan, err := e.Plan(sql)
+	if err != nil {
+		return nil, err
+	}
+	return optimizer.Optimize(ctx, plan, e.stats)
+}
+
+// Explain returns the EXPLAIN tree for a query's unoptimized logical plan.
 func (e *Engine) Explain(sql string) (string, error) {
 	plan, err := e.Plan(sql)
 	if err != nil {
 		return "", err
 	}
 	return logical.Explain(plan), nil
+}
+
+// ExplainCost returns the optimized plan annotated with estimated rows and cost
+// per operator, plus the total query cost.
+func (e *Engine) ExplainCost(ctx context.Context, sql string) (string, error) {
+	plan, err := e.OptimizedPlan(ctx, sql)
+	if err != nil {
+		return "", err
+	}
+	return optimizer.ExplainCost(ctx, plan, e.stats)
+}
+
+// Cost returns the optimizer's total estimated cost for a query — the single
+// number the rate limiter charges against a tenant's quota.
+func (e *Engine) Cost(ctx context.Context, sql string) (float64, error) {
+	plan, err := e.OptimizedPlan(ctx, sql)
+	if err != nil {
+		return 0, err
+	}
+	analysis, err := optimizer.Analyze(ctx, plan, e.stats)
+	if err != nil {
+		return 0, err
+	}
+	return analysis.TotalCost(plan), nil
 }
 
 // Result is the materialized output of a query.
@@ -72,7 +108,7 @@ func (r *Result) RowCount() int {
 // are collected in memory, which suits a CLI/demo; streaming output is a later
 // concern.
 func (e *Engine) Query(ctx context.Context, sql string) (*Result, error) {
-	plan, err := e.Plan(sql)
+	plan, err := e.OptimizedPlan(ctx, sql)
 	if err != nil {
 		return nil, err
 	}
