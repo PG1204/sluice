@@ -109,11 +109,33 @@ func (r *Result) RowCount() int {
 	return n
 }
 
-// Query runs a query end to end and returns the materialized result. Results
-// are collected in memory, which suits a CLI/demo; streaming output is a later
-// concern.
-func (e *Engine) Query(ctx context.Context, sql string) (*Result, error) {
+// Prepared is a query that has been parsed, planned, optimized, cost-estimated,
+// and lowered to an executable operator — everything except running it. It lets
+// a caller learn a query's cost (e.g. to make a rate-limiting decision) and
+// then execute the *same* plan, without re-doing the planning work or risking
+// the estimate diverging from what runs.
+type Prepared struct {
+	op     physical.Operator
+	cost   float64
+	schema storage.Schema
+}
+
+// Cost is the optimizer's total estimated cost for the prepared query.
+func (p *Prepared) Cost() float64 { return p.cost }
+
+// Schema is the output schema of the prepared query.
+func (p *Prepared) Schema() storage.Schema { return p.schema }
+
+// Prepare parses, plans, optimizes, estimates the cost of, and builds the
+// physical operator for a query. All input errors (syntax, validation,
+// unsupported features surfaced during lowering) happen here — before any work
+// is charged or executed.
+func (e *Engine) Prepare(ctx context.Context, sql string) (*Prepared, error) {
 	plan, err := e.OptimizedPlan(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := optimizer.Analyze(ctx, plan, e.stats)
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +143,15 @@ func (e *Engine) Query(ctx context.Context, sql string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	return &Prepared{op: op, cost: analysis.TotalCost(plan), schema: plan.Schema()}, nil
+}
 
-	result := &Result{Schema: plan.Schema()}
-	err = physical.Run(ctx, op, func(b *storage.Batch) error {
+// Execute runs a prepared query and returns the materialized result. Results
+// are collected in memory, which suits a CLI/demo; streaming output is a later
+// concern.
+func (e *Engine) Execute(ctx context.Context, p *Prepared) (*Result, error) {
+	result := &Result{Schema: p.schema}
+	err := physical.Run(ctx, p.op, func(b *storage.Batch) error {
 		result.Batches = append(result.Batches, b)
 		return nil
 	})
@@ -131,6 +159,15 @@ func (e *Engine) Query(ctx context.Context, sql string) (*Result, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// Query prepares and executes a query end to end.
+func (e *Engine) Query(ctx context.Context, sql string) (*Result, error) {
+	p, err := e.Prepare(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	return e.Execute(ctx, p)
 }
 
 // String renders the result as an aligned text table, with a trailing row

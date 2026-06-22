@@ -82,6 +82,16 @@ curl -s localhost:8080/quota -H 'X-API-Key: dev-key'
 API keys and per-tenant quotas come from a JSON config (`--config`); without one
 a `dev-key` default is used. The full spec is in [docs/openapi.yaml](docs/openapi.yaml).
 
+**Cost-based throttling.** `/query` estimates each query's cost, converts it to
+tokens (`cost_per_token` in config), and charges the tenant's token-bucket
+quota. Expensive queries drain quota faster than cheap ones, so they get
+throttled sooner at the same request rate — a query that exceeds quota returns
+`429` with a `Retry-After` header and a body explaining the cost:
+
+```json
+{"error":"rate limit exceeded","estimated_cost":36,"tokens_required":4,"remaining":2,"retry_after_seconds":0}
+```
+
 `docker compose up` builds and runs the API server with Redis over the sample
 data; the dashboard service arrives in a later phase.
 

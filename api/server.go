@@ -12,11 +12,12 @@ import (
 // Server is the HTTP service. It owns the engine, the rate limiter, and the
 // auth/quota configuration, and exposes an http.Handler with all routes.
 type Server struct {
-	engine      *engine.Engine
-	limiter     limiter.Limiter
-	limiterCfg  limiter.Config
-	keyToTenant map[string]string
-	log         *slog.Logger
+	engine       *engine.Engine
+	limiter      limiter.Limiter
+	limiterCfg   limiter.Config
+	keyToTenant  map[string]string
+	costPerToken float64
+	log          *slog.Logger
 }
 
 // NewServer builds a Server from config. It wires an in-memory token-bucket
@@ -27,12 +28,17 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		log = slog.Default()
 	}
 	lc := cfg.limiterConfig()
+	costPerToken := cfg.CostPerToken
+	if costPerToken <= 0 {
+		costPerToken = DefaultCostPerToken
+	}
 	return &Server{
-		engine:      engine.New(cfg.DataDir),
-		limiter:     limiter.NewTokenBucket(lc),
-		limiterCfg:  lc,
-		keyToTenant: cfg.keyToTenant(),
-		log:         log,
+		engine:       engine.New(cfg.DataDir),
+		limiter:      limiter.NewTokenBucket(lc),
+		limiterCfg:   lc,
+		keyToTenant:  cfg.keyToTenant(),
+		costPerToken: costPerToken,
+		log:          log,
 	}
 }
 

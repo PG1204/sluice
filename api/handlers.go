@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // contextWithTenant / tenantFromContext carry the authenticated tenant through
@@ -21,9 +24,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthBody())
 }
 
-// handleQuery runs a SQL query and returns rows as JSON. A bad query (parse,
-// validation, or unknown table) is a 400; the SQL is the client's input.
+// handleQuery is the cost-based throttling path — the heart of Sluice. It
+// prepares the query (which estimates its cost), charges that cost against the
+// tenant's quota, and only executes if the tenant can afford it. An expensive
+// query therefore draws down quota faster than a cheap one, so it gets
+// throttled sooner at the same request rate.
+//
+// Ordering matters: all input errors surface in Prepare (a 400) *before* any
+// tokens are charged; only a tenant that's out of quota gets a 429.
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	var req sqlRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
@@ -33,13 +44,65 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sql is required")
 		return
 	}
+	tenant := tenantFromContext(r.Context())
 
-	result, err := s.engine.Query(r.Context(), req.SQL)
+	// 1. Prepare: parse, plan, optimize, estimate cost (cheap, no execution).
+	prepared, err := s.engine.Prepare(r.Context(), req.SQL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// 2. Map the estimated cost to tokens and try to consume them.
+	cost := prepared.Cost()
+	tokens := tokensForCost(cost, s.costPerToken)
+	res, err := s.limiter.Allow(r.Context(), tenant, tokens)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 3. Out of quota -> 429, with retry/cost info so the caller understands.
+	if !res.Allowed {
+		retrySec := int(math.Ceil(res.RetryAfter.Seconds()))
+		w.Header().Set("Retry-After", strconv.Itoa(retrySec))
+		s.log.Info("query throttled",
+			"tenant", tenant, "estimated_cost", cost, "tokens", tokens,
+			"remaining", res.Remaining, "retry_after_s", retrySec)
+		writeJSON(w, http.StatusTooManyRequests, throttleResponse{
+			Error:             "rate limit exceeded",
+			EstimatedCost:     cost,
+			TokensRequired:    tokens,
+			Remaining:         res.Remaining,
+			RetryAfterSeconds: retrySec,
+		})
+		return
+	}
+
+	// 4. Allowed: execute and return results.
+	result, err := s.engine.Execute(r.Context(), prepared)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.log.Info("query ok",
+		"tenant", tenant, "estimated_cost", cost, "tokens", tokens,
+		"remaining", res.Remaining, "rows", result.RowCount(),
+		"latency_ms", time.Since(start).Milliseconds())
 	writeJSON(w, http.StatusOK, newQueryResponse(result))
+}
+
+// tokensForCost maps an estimated query cost to the number of tokens to charge,
+// rounding up and charging at least one token per query.
+func tokensForCost(cost, costPerToken float64) int64 {
+	if costPerToken <= 0 {
+		costPerToken = DefaultCostPerToken
+	}
+	tokens := int64(math.Ceil(cost / costPerToken))
+	if tokens < 1 {
+		return 1
+	}
+	return tokens
 }
 
 // handleExplain returns the optimized plan (with per-operator cost) and the
