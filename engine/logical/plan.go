@@ -11,6 +11,8 @@
 package logical
 
 import (
+	"strings"
+
 	"github.com/PG1204/sluice/engine/ast"
 	"github.com/PG1204/sluice/engine/storage"
 )
@@ -23,17 +25,22 @@ type Plan interface {
 	Schema() storage.Schema
 	// Children returns the input plans, in order (leaf operators return nil).
 	Children() []Plan
-	// describe renders this node as a single EXPLAIN line (without children).
-	describe() string
+	// Describe renders this node as a single EXPLAIN line (without children).
+	Describe() string
 	// isPlan is an unexported marker so only this package defines plan nodes.
 	isPlan()
 }
 
-// Scan reads all rows of a base table. It is always a leaf.
+// Scan reads rows of a base table. It is always a leaf.
+//
+// Projection is the set of column names the scan needs to output, in table
+// order; it is set by the projection-pushdown optimizer rule. nil means "all
+// columns" (the unoptimized default).
 type Scan struct {
 	Table       string
 	Alias       string // empty if the table was referenced without an alias
 	TableSchema storage.Schema
+	Projection  []string
 }
 
 // Filter keeps only rows for which Predicate evaluates to true.
@@ -108,8 +115,30 @@ type Limit struct {
 
 // --- Schema() ---
 
-// Schema returns the table's full schema.
-func (s *Scan) Schema() storage.Schema { return s.TableSchema }
+// Schema returns the scan's output schema: the projected subset of the table's
+// columns when a projection has been pushed down, otherwise the full table.
+func (s *Scan) Schema() storage.Schema {
+	if s.Projection == nil {
+		return s.TableSchema
+	}
+	fields := make([]storage.Field, 0, len(s.Projection))
+	for _, f := range s.TableSchema.Fields {
+		if containsString(s.Projection, f.Name) {
+			fields = append(fields, f)
+		}
+	}
+	return storage.Schema{Fields: fields}
+}
+
+// containsString reports whether name is in names (case-insensitive).
+func containsString(names []string, name string) bool {
+	for _, n := range names {
+		if strings.EqualFold(n, name) {
+			return true
+		}
+	}
+	return false
+}
 
 // Schema is the input schema: a filter never changes columns.
 func (f *Filter) Schema() storage.Schema { return f.Input.Schema() }

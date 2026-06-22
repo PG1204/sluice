@@ -44,6 +44,8 @@ func run(args []string) error {
 		return runQuery(args[1:])
 	case "explain":
 		return runExplain(args[1:])
+	case "cost":
+		return runCost(args[1:])
 	case "tables":
 		return runTables(args[1:])
 	default:
@@ -98,18 +100,52 @@ func runQuery(args []string) error {
 }
 
 func runExplain(args []string) error {
+	// --cost switches to the optimized plan annotated with cost estimates.
+	cost := false
+	filtered := args[:0:0]
+	for _, a := range args {
+		if a == "--cost" {
+			cost = true
+			continue
+		}
+		filtered = append(filtered, a)
+	}
+
+	dataDir, rest, err := parseArgs(filtered)
+	if err != nil {
+		return err
+	}
+	if len(rest) == 0 {
+		return fmt.Errorf(`usage: sluice explain [--cost] [--data DIR] "<SQL>"`)
+	}
+
+	eng := engine.New(dataDir)
+	var out string
+	if cost {
+		out, err = eng.ExplainCost(context.Background(), rest[0])
+	} else {
+		out, err = eng.Explain(rest[0])
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
+
+func runCost(args []string) error {
 	dataDir, rest, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
 	if len(rest) == 0 {
-		return fmt.Errorf(`usage: sluice explain [--data DIR] "<SQL>"`)
+		return fmt.Errorf(`usage: sluice cost [--data DIR] "<SQL>"`)
 	}
-	plan, err := engine.New(dataDir).Explain(rest[0])
+	c, err := engine.New(dataDir).Cost(context.Background(), rest[0])
 	if err != nil {
 		return err
 	}
-	fmt.Print(plan)
+	fmt.Printf("%.1f\n", c)
 	return nil
 }
 
@@ -135,8 +171,9 @@ func runTables(args []string) error {
 func printUsage() {
 	fmt.Printf("sluice %s — cost-aware query engine\n\n", common.Version)
 	fmt.Println("usage:")
-	fmt.Println(`  sluice query   "SELECT ..."  [--data DIR]   run a query`)
-	fmt.Println(`  sluice explain "SELECT ..."  [--data DIR]   print the logical plan`)
-	fmt.Println(`  sluice tables                [--data DIR]   list available tables`)
+	fmt.Println(`  sluice query   "SELECT ..."  [--data DIR]            run a query`)
+	fmt.Println(`  sluice explain "SELECT ..."  [--cost] [--data DIR]   print the plan (--cost: optimized + cost)`)
+	fmt.Println(`  sluice cost    "SELECT ..."  [--data DIR]            print the estimated query cost`)
+	fmt.Println(`  sluice tables                [--data DIR]            list available tables`)
 	fmt.Println(`  sluice --version`)
 }

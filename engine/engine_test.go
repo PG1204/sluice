@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/PG1204/sluice/engine/logical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,6 +124,34 @@ func TestExplain(t *testing.T) {
 	plan, err := testEngine().Explain("SELECT name FROM orders WHERE amount > 100")
 	require.NoError(t, err)
 	assert.Equal(t, "Project: name\n  Filter: amount > 100\n    Scan: orders\n", plan)
+}
+
+func TestExplainCost(t *testing.T) {
+	out, err := testEngine().ExplainCost(context.Background(), "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name")
+	require.NoError(t, err)
+	assert.Contains(t, out, "rows=")
+	assert.Contains(t, out, "cost=")
+	assert.Contains(t, out, "Total cost:")
+	// Projection pushdown should narrow the scan (amount + name, not id/status).
+	assert.Contains(t, out, "Scan: orders [")
+}
+
+func TestCost(t *testing.T) {
+	c, err := testEngine().Cost(context.Background(), "SELECT name FROM orders WHERE amount > 100")
+	require.NoError(t, err)
+	assert.Greater(t, c, 0.0)
+}
+
+func TestOptimizedPlan_PushesPredicateBelowJoin(t *testing.T) {
+	plan, err := testEngine().OptimizedPlan(context.Background(),
+		"SELECT o.name, c.city FROM orders o JOIN customers c ON o.name = c.name WHERE o.amount > 100")
+	require.NoError(t, err)
+	// After optimization the WHERE is no longer the node directly under Project;
+	// it has been pushed below the join.
+	proj, ok := plan.(*logical.Project)
+	require.True(t, ok)
+	_, stillFilter := proj.Input.(*logical.Filter)
+	assert.False(t, stillFilter, "predicate should have been pushed below the join")
 }
 
 func TestTables(t *testing.T) {

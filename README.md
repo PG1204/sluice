@@ -58,7 +58,11 @@ Run a query against the bundled sample tables in `testdata/`:
 ```bash
 ./bin/sluice tables --data ./testdata
 ./bin/sluice query "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name" --data ./testdata
-./bin/sluice explain "SELECT name, SUM(amount) AS total FROM orders GROUP BY name ORDER BY total DESC"
+
+# Cost-based planning: the optimizer estimates rows and cost per operator
+# before execution. This total cost is what the rate limiter will charge.
+./bin/sluice explain --cost "SELECT o.name, c.city FROM orders o JOIN customers c ON o.name = c.name WHERE o.amount > 100"
+./bin/sluice cost "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name"
 ```
 
 `docker-compose up` will bring up the full stack (api + redis + dashboard) once

@@ -51,11 +51,30 @@ func (b *builder) buildScan(n *logical.Scan) (Operator, layout, error) {
 	if qualifier == "" {
 		qualifier = n.Table
 	}
-	cols := make([]colInfo, len(n.TableSchema.Fields))
-	for i, f := range n.TableSchema.Fields {
+
+	// Scan.Schema() is the projected subset (or the full table). Build the
+	// layout from it and, when narrowed, the indices that select those columns
+	// out of each full source batch.
+	out := n.Schema()
+	cols := make([]colInfo, len(out.Fields))
+	for i, f := range out.Fields {
 		cols[i] = colInfo{qualifier: qualifier, name: f.Name, typ: f.Type}
 	}
-	return NewSeqScan(b.opener, n.Table, n.TableSchema), layout{cols: cols}, nil
+
+	var indices []int
+	if n.Projection != nil {
+		indices = make([]int, len(out.Fields))
+		for i, of := range out.Fields {
+			for ti, tf := range n.TableSchema.Fields {
+				if tf.Name == of.Name {
+					indices[i] = ti
+					break
+				}
+			}
+		}
+	}
+
+	return NewSeqScan(b.opener, n.Table, out, indices), layout{cols: cols}, nil
 }
 
 func (b *builder) buildFilter(n *logical.Filter) (Operator, layout, error) {
