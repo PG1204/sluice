@@ -49,6 +49,7 @@ docs/decisions/0003-storage-columnar.md
 docs/decisions/0004-logical-plan.md
 docs/decisions/0005-physical-execution.md
 docs/decisions/0006-cost-optimizer.md
+docs/decisions/0007-rate-limiter.md
 
 # Local Claude Code / editor settings
 .claude/
