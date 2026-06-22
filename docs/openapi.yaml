@@ -1,0 +1,160 @@
+openapi: 3.0.3
+info:
+  title: Sluice API
+  description: >
+    HTTP/JSON interface to the Sluice cost-aware query engine. Submit SQL, get
+    results or a cost-annotated plan, list tables, check health, and read quota.
+    All endpoints except /health require an X-API-Key header.
+  version: 0.0.0-dev
+
+servers:
+  - url: http://localhost:8080
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    SqlRequest:
+      type: object
+      required: [sql]
+      properties:
+        sql:
+          type: string
+          example: "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name"
+    Column:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [INT64, FLOAT64, BOOL, STRING, NULL] }
+        nullable: { type: boolean }
+    QueryResponse:
+      type: object
+      properties:
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/Column' }
+        rows:
+          type: array
+          description: Row-major result values; null encodes SQL NULL.
+          items:
+            type: array
+            items: {}
+        row_count: { type: integer }
+    ExplainResponse:
+      type: object
+      properties:
+        plan: { type: string, description: Optimized plan tree with per-operator rows and cost. }
+        cost: { type: number, description: Total estimated query cost. }
+    TablesResponse:
+      type: object
+      properties:
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              columns:
+                type: array
+                items: { $ref: '#/components/schemas/Column' }
+    QuotaResponse:
+      type: object
+      properties:
+        tenant: { type: string }
+        remaining: { type: integer }
+        rate: { type: number }
+        burst: { type: integer }
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        version: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Liveness and version
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+  /query:
+    post:
+      summary: Run a SQL query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SqlRequest' }
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueryResponse' }
+        '400':
+          description: Invalid SQL or request body
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /explain:
+    post:
+      summary: Optimized plan and estimated cost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SqlRequest' }
+      responses:
+        '200':
+          description: Plan and cost
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExplainResponse' }
+        '400':
+          description: Invalid SQL or request body
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Missing or invalid API key
+  /tables:
+    get:
+      summary: List available tables and schemas
+      responses:
+        '200':
+          description: Tables
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TablesResponse' }
+        '401':
+          description: Missing or invalid API key
+  /quota:
+    get:
+      summary: Current rate-limit status for the caller
+      responses:
+        '200':
+          description: Quota status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaResponse' }
+        '401':
+          description: Missing or invalid API key

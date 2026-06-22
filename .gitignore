@@ -50,6 +50,7 @@ docs/decisions/0004-logical-plan.md
 docs/decisions/0005-physical-execution.md
 docs/decisions/0006-cost-optimizer.md
 docs/decisions/0007-rate-limiter.md
+docs/decisions/0008-http-api.md
 
 # Local Claude Code / editor settings
 .claude/

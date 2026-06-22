@@ -60,6 +60,6 @@ func TestRedis_QuotaResolution(t *testing.T) {
 		Default:   Quota{Rate: 1, Burst: 1},
 		PerTenant: map[string]Quota{"vip": {Rate: 100, Burst: 100}},
 	}
-	assert.Equal(t, Quota{Rate: 100, Burst: 100}, cfg.quotaFor("vip"))
-	assert.Equal(t, Quota{Rate: 1, Burst: 1}, cfg.quotaFor("someone-else"))
+	assert.Equal(t, Quota{Rate: 100, Burst: 100}, cfg.QuotaFor("vip"))
+	assert.Equal(t, Quota{Rate: 1, Burst: 1}, cfg.QuotaFor("someone-else"))
 }

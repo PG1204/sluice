@@ -65,8 +65,25 @@ Run a query against the bundled sample tables in `testdata/`:
 ./bin/sluice cost "SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name"
 ```
 
-`docker-compose up` will bring up the full stack (api + redis + dashboard) once
-those services exist.
+### HTTP API
+
+Run the engine as a service (`POST /query`, `POST /explain`, `GET /tables`,
+`GET /quota`, `GET /health`; all but `/health` need an `X-API-Key`):
+
+```bash
+go run ./cmd/sluice-server --data ./testdata      # listens on :8080
+
+curl localhost:8080/health
+curl -s -X POST localhost:8080/query -H 'X-API-Key: dev-key' \
+  -d '{"sql":"SELECT name, COUNT(*) FROM orders WHERE amount > 100 GROUP BY name"}'
+curl -s localhost:8080/quota -H 'X-API-Key: dev-key'
+```
+
+API keys and per-tenant quotas come from a JSON config (`--config`); without one
+a `dev-key` default is used. The full spec is in [docs/openapi.yaml](docs/openapi.yaml).
+
+`docker compose up` builds and runs the API server with Redis over the sample
+data; the dashboard service arrives in a later phase.
 
 ## Design decisions
 

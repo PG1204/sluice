@@ -37,8 +37,8 @@ type Config struct {
 	PerTenant map[string]Quota
 }
 
-// quotaFor returns the quota for a tenant, falling back to the default.
-func (c Config) quotaFor(tenant string) Quota {
+// QuotaFor returns the quota for a tenant, falling back to the default.
+func (c Config) QuotaFor(tenant string) Quota {
 	if q, ok := c.PerTenant[tenant]; ok {
 		return q
 	}
