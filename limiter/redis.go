@@ -86,7 +86,7 @@ func (r *Redis) Allow(ctx context.Context, tenantID string, cost int64) (Result,
 	if cost < 0 {
 		return Result{}, errNegativeCost
 	}
-	q := r.cfg.quotaFor(tenantID)
+	q := r.cfg.QuotaFor(tenantID)
 	now := r.clock().UnixMilli()
 
 	out, err := r.script.Run(ctx, r.rdb, []string{keyPrefix + tenantID}, q.Rate, q.Burst, now, cost).Slice()

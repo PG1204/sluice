@@ -83,7 +83,7 @@ func (tb *TokenBucket) Allow(_ context.Context, tenantID string, cost int64) (Re
 	if cost < 0 {
 		return Result{}, errNegativeCost
 	}
-	q := tb.cfg.quotaFor(tenantID)
+	q := tb.cfg.QuotaFor(tenantID)
 	now := tb.clock()
 
 	tb.mu.Lock()

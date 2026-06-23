@@ -34,6 +34,11 @@ func (e *Engine) Tables() ([]string, error) {
 	return e.registry.Tables()
 }
 
+// TableSchema returns the schema of a named table.
+func (e *Engine) TableSchema(ctx context.Context, name string) (storage.Schema, error) {
+	return e.registry.Schema(ctx, name)
+}
+
 // Plan parses the SQL and builds a validated (unoptimized) logical plan.
 func (e *Engine) Plan(sql string) (logical.Plan, error) {
 	stmt, err := parser.Parse(sql)
