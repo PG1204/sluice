@@ -44,6 +44,7 @@ Icon
 CLAUDE.md
 sluice-build-plan.md
 docs/OVERVIEW.md
+docs/DEMO.md
 docs/decisions/0001-language-choice.md
 docs/decisions/0002-parser-design.md
 docs/decisions/0003-storage-columnar.md
@@ -54,6 +55,7 @@ docs/decisions/0007-rate-limiter.md
 docs/decisions/0008-http-api.md
 docs/decisions/0009-cost-based-throttling.md
 docs/decisions/0010-observability-dashboard.md
+docs/decisions/0011-polish-and-schema-cache.md
 
 # Local Claude Code / editor settings
 .claude/
