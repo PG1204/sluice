@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/PG1204/sluice/engine"
 	"github.com/PG1204/sluice/limiter"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Server is the HTTP service. It owns the engine, the rate limiter, and the
@@ -17,6 +21,8 @@ type Server struct {
 	limiterCfg   limiter.Config
 	keyToTenant  map[string]string
 	costPerToken float64
+	metrics      *metrics
+	collector    *Collector
 	log          *slog.Logger
 }
 
@@ -38,20 +44,73 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		limiterCfg:   lc,
 		keyToTenant:  cfg.keyToTenant(),
 		costPerToken: costPerToken,
+		metrics:      newMetrics(),
+		collector:    NewCollector(),
 		log:          log,
 	}
 }
 
-// Handler returns the routed http.Handler. /health is public; every other
-// endpoint requires a valid API key.
+// Handler returns the routed http.Handler. /health and /metrics are public;
+// every other endpoint requires a valid API key. The whole mux is wrapped in
+// request-ID middleware so every request (and its logs) is traceable.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(s.metrics.registry, promhttp.HandlerOpts{}))
 	mux.Handle("POST /query", s.authed(s.handleQuery))
 	mux.Handle("POST /explain", s.authed(s.handleExplain))
+	mux.Handle("POST /plan", s.authed(s.handlePlan))
 	mux.Handle("GET /tables", s.authed(s.handleTables))
 	mux.Handle("GET /quota", s.authed(s.handleQuota))
-	return mux
+	mux.Handle("GET /stats", s.authed(s.handleStats))
+	return s.withCORS(s.withRequestID(mux))
+}
+
+// withCORS allows the browser dashboard (served from a different origin in dev)
+// to call the API. It is permissive by design for a local/demo service;
+// production would restrict the allowed origin.
+func (s *Server) withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requestIDContextKey carries the per-request trace ID.
+type requestIDContextKey struct{}
+
+// withRequestID assigns each request a trace ID, echoes it in the X-Request-ID
+// response header, and stores it in the context for handlers and logs.
+func (s *Server) withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
+		if id == "" {
+			id = newRequestID()
+		}
+		w.Header().Set("X-Request-ID", id)
+		ctx := context.WithValue(r.Context(), requestIDContextKey{}, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDContextKey{}).(string)
+	return id
+}
+
+// newRequestID returns a random 16-hex-char trace ID (no external uuid dep).
+func newRequestID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // tenantContextKey carries the authenticated tenant through the request.
