@@ -37,7 +37,16 @@ type Config struct {
 	DefaultQuota Quota `json:"default_quota"`
 	// APIKeys maps an API key string to its configuration.
 	APIKeys map[string]KeyConfig `json:"api_keys"`
+	// CostPerToken is the cost-to-token exchange rate: one token is charged per
+	// this many estimated cost units (rounded up, minimum one token per query).
+	// Larger values make queries cheaper in tokens; quotas are denominated in
+	// tokens. Defaults to DefaultCostPerToken when unset.
+	CostPerToken float64 `json:"cost_per_token"`
 }
+
+// DefaultCostPerToken is the cost-to-token rate used when config leaves it
+// unset: 10 cost units per token.
+const DefaultCostPerToken = 10.0
 
 // DefaultConfig returns a ready-to-run dev configuration: the given data
 // directory, a modest default quota, and a single demo key. It lets the server
@@ -46,6 +55,7 @@ func DefaultConfig(dataDir string) Config {
 	return Config{
 		DataDir:      dataDir,
 		DefaultQuota: Quota{Rate: 10, Burst: 100},
+		CostPerToken: DefaultCostPerToken,
 		APIKeys: map[string]KeyConfig{
 			"dev-key": {Tenant: "dev"},
 		},

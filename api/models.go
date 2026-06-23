@@ -31,6 +31,16 @@ type explainResponse struct {
 	Cost float64 `json:"cost"`
 }
 
+// throttleResponse is the 429 body when a query exceeds the tenant's quota. It
+// reports what the query would have cost so the caller understands why.
+type throttleResponse struct {
+	Error             string  `json:"error"`
+	EstimatedCost     float64 `json:"estimated_cost"`
+	TokensRequired    int64   `json:"tokens_required"`
+	Remaining         int64   `json:"remaining"`
+	RetryAfterSeconds int     `json:"retry_after_seconds"`
+}
+
 // tableInfo / tablesResponse are the result of GET /tables.
 type tableInfo struct {
 	Name    string       `json:"name"`
