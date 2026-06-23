@@ -30,6 +30,24 @@ func newDataDir(t *testing.T) string {
 	return dir
 }
 
+func TestRegistry_SchemaIsCached(t *testing.T) {
+	dir := newDataDir(t)
+	r := NewRegistry(dir)
+	ctx := context.Background()
+
+	first, err := r.Schema(ctx, "orders")
+	require.NoError(t, err)
+	require.Equal(t, []string{"order_id", "total"}, first.Names())
+
+	// Delete the backing file: a cached schema must still resolve, proving the
+	// second call did not re-open (and re-scan) the file.
+	require.NoError(t, os.Remove(filepath.Join(dir, "orders.csv")))
+
+	second, err := r.Schema(ctx, "orders")
+	require.NoError(t, err, "schema should be served from cache after the file is gone")
+	assert.Equal(t, first, second)
+}
+
 func TestRegistry_Tables(t *testing.T) {
 	r := NewRegistry(newDataDir(t))
 	tables, err := r.Tables()
