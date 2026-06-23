@@ -93,7 +93,24 @@ throttled sooner at the same request rate — a query that exceeds quota returns
 ```
 
 `docker compose up` builds and runs the API server with Redis over the sample
-data; the dashboard service arrives in a later phase.
+data.
+
+### Observability & dashboard
+
+The server exposes Prometheus metrics at `GET /metrics` (query counts, latency
+histogram, tokens consumed per tenant), tags every request with an
+`X-Request-ID`, and serves a live `GET /stats` snapshot (per-tenant usage, cost
+histogram, recent-query feed).
+
+A React + Recharts dashboard visualizes it — live query feed, per-tenant quota
+usage, cost distribution, top throttled tenants, and a query-plan visualizer:
+
+```bash
+go run ./cmd/sluice-server --data ./testdata   # terminal 1
+cd dashboard && npm install && npm run dev      # terminal 2 -> http://localhost:3000
+```
+
+See [dashboard/](dashboard/) for details.
 
 ## Design decisions
 

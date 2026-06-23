@@ -56,6 +56,17 @@ func do(t *testing.T, ts *httptest.Server, method, path, key, body string) (int,
 	return resp.StatusCode, decoded
 }
 
+func TestCORS_Preflight(t *testing.T) {
+	ts := newTestServer(t)
+	req, _ := http.NewRequest(http.MethodOptions, ts.URL+"/query", nil)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, "*", resp.Header.Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, resp.Header.Get("Access-Control-Allow-Headers"), "X-API-Key")
+}
+
 func TestHealth_NoAuth(t *testing.T) {
 	ts := newTestServer(t)
 	status, body := do(t, ts, http.MethodGet, "/health", "", "")

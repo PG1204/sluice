@@ -30,10 +30,11 @@ Icon
 *.swo
 *~
 
-# Dashboard (Node) build output — added in Phase 9
+# Dashboard (Node) build output
 /dashboard/node_modules/
 /dashboard/dist/
 /dashboard/build/
+*.tsbuildinfo
 
 # Local env overrides
 .env
@@ -52,6 +53,7 @@ docs/decisions/0006-cost-optimizer.md
 docs/decisions/0007-rate-limiter.md
 docs/decisions/0008-http-api.md
 docs/decisions/0009-cost-based-throttling.md
+docs/decisions/0010-observability-dashboard.md
 
 # Local Claude Code / editor settings
 .claude/

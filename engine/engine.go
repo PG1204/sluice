@@ -94,6 +94,39 @@ func (e *Engine) Cost(ctx context.Context, sql string) (float64, error) {
 	return analysis.TotalCost(plan), nil
 }
 
+// PlanNode is a node of the optimized plan as a serializable tree, for the
+// dashboard's plan visualizer: a label plus the optimizer's row/cost estimates
+// and the node's children.
+type PlanNode struct {
+	Label    string     `json:"label"`
+	Rows     int64      `json:"rows"`
+	Cost     float64    `json:"cost"`
+	Children []PlanNode `json:"children,omitempty"`
+}
+
+// PlanTree returns the optimized plan for a query as an annotated tree.
+func (e *Engine) PlanTree(ctx context.Context, sql string) (*PlanNode, error) {
+	plan, err := e.OptimizedPlan(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := optimizer.Analyze(ctx, plan, e.stats)
+	if err != nil {
+		return nil, err
+	}
+	node := buildPlanNode(plan, analysis)
+	return &node, nil
+}
+
+func buildPlanNode(p logical.Plan, a *optimizer.Analysis) PlanNode {
+	est := a.Of(p)
+	node := PlanNode{Label: p.Describe(), Rows: est.Rows, Cost: est.Cost}
+	for _, child := range p.Children() {
+		node.Children = append(node.Children, buildPlanNode(child, a))
+	}
+	return node
+}
+
 // Result is the materialized output of a query.
 type Result struct {
 	Schema  storage.Schema

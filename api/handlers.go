@@ -45,10 +45,12 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenant := tenantFromContext(r.Context())
+	reqID := requestIDFromContext(r.Context())
 
 	// 1. Prepare: parse, plan, optimize, estimate cost (cheap, no execution).
 	prepared, err := s.engine.Prepare(r.Context(), req.SQL)
 	if err != nil {
+		s.record(reqID, tenant, req.SQL, outcomeError, 0, 0, 0, time.Since(start))
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -66,9 +68,10 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !res.Allowed {
 		retrySec := int(math.Ceil(res.RetryAfter.Seconds()))
 		w.Header().Set("Retry-After", strconv.Itoa(retrySec))
+		s.record(reqID, tenant, req.SQL, outcomeThrottled, cost, tokens, 0, time.Since(start))
 		s.log.Info("query throttled",
-			"tenant", tenant, "estimated_cost", cost, "tokens", tokens,
-			"remaining", res.Remaining, "retry_after_s", retrySec)
+			"request_id", reqID, "tenant", tenant, "estimated_cost", cost,
+			"tokens", tokens, "remaining", res.Remaining, "retry_after_s", retrySec)
 		writeJSON(w, http.StatusTooManyRequests, throttleResponse{
 			Error:             "rate limit exceeded",
 			EstimatedCost:     cost,
@@ -82,15 +85,37 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// 4. Allowed: execute and return results.
 	result, err := s.engine.Execute(r.Context(), prepared)
 	if err != nil {
+		s.record(reqID, tenant, req.SQL, outcomeError, cost, tokens, 0, time.Since(start))
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	latency := time.Since(start)
+	s.record(reqID, tenant, req.SQL, outcomeOK, cost, tokens, int64(result.RowCount()), latency)
 	s.log.Info("query ok",
-		"tenant", tenant, "estimated_cost", cost, "tokens", tokens,
-		"remaining", res.Remaining, "rows", result.RowCount(),
-		"latency_ms", time.Since(start).Milliseconds())
+		"request_id", reqID, "tenant", tenant, "estimated_cost", cost,
+		"tokens", tokens, "remaining", res.Remaining, "rows", result.RowCount(),
+		"latency_ms", latency.Milliseconds())
 	writeJSON(w, http.StatusOK, newQueryResponse(result))
 }
+
+// record observes one query in both Prometheus and the dashboard collector.
+func (s *Server) record(reqID, tenant, sql, outcome string, cost float64, tokens, rows int64, latency time.Duration) {
+	s.metrics.observe(tenant, outcome, tokens, latency.Seconds())
+	s.collector.Record(QueryEvent{
+		RequestID:     reqID,
+		Time:          nowRFC3339(),
+		Tenant:        tenant,
+		SQL:           sql,
+		Outcome:       outcome,
+		EstimatedCost: cost,
+		Tokens:        tokens,
+		Rows:          rows,
+		LatencyMs:     latency.Milliseconds(),
+	})
+}
+
+// nowRFC3339 is the current UTC time as an RFC3339 string for event timestamps.
+func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // tokensForCost maps an estimated query cost to the number of tokens to charge,
 // rounding up and charging at least one token per query.
@@ -148,6 +173,32 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 		resp.Tables = append(resp.Tables, tableInfo{Name: name, Columns: schemaColumns(schema)})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handlePlan returns the optimized plan as a tree (label + estimated rows/cost
+// per node), for the dashboard's plan visualizer.
+func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
+	var req sqlRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if req.SQL == "" {
+		writeError(w, http.StatusBadRequest, "sql is required")
+		return
+	}
+	tree, err := s.engine.PlanTree(r.Context(), req.SQL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// handleStats returns the dashboard snapshot: totals, per-tenant usage, the
+// cost histogram, and the recent-query feed.
+func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.collector.Snapshot())
 }
 
 // handleQuota reports the caller's current quota. It peeks at the bucket with a
